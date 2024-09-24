@@ -3,6 +3,8 @@ package com.dingdong.imageserver.service;
 import com.dingdong.imageserver.dto.prompt.CommonPromptDTO;
 import com.dingdong.imageserver.enums.TaskAction;
 import com.dingdong.imageserver.model.Task;
+import com.dingdong.imageserver.service.firebase.FirebaseCharacterService;
+import com.dingdong.imageserver.service.firebase.FirebasePromptService;
 import com.google.firebase.database.DatabaseReference;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -16,14 +18,15 @@ import java.util.function.Consumer;
 @RequiredArgsConstructor
 public class TaskStatusService {
 
-    private final FirebaseService firebaseService;
+    private final FirebasePromptService firebasePromptService;
+    private final FirebaseCharacterService firebaseCharacterService;
     private final ApiService apiService;
     private final AtomicInteger promptCount = new AtomicInteger(0);
 
     public void scheduleTaskStatusFetching(Boolean bgRemove, TaskAction taskAction, String taskId,
                                            Consumer<List<String>> onComplete, CommonPromptDTO character, String studentTaskId, String imageId) {
         CompletableFuture.runAsync(() -> {
-            DatabaseReference characterRef = firebaseService.getCharacterReference(studentTaskId, imageId, character);
+            DatabaseReference characterRef = firebaseCharacterService.getCharacterReference(studentTaskId, imageId, character);
             while (true) {
                 Task updatedTask = apiService.fetchAndSaveTask(taskId);
                 updateTaskProgress(characterRef, updatedTask);
@@ -72,7 +75,7 @@ public class TaskStatusService {
 
     private void handleTaskFailure(DatabaseReference characterRef, TaskAction taskAction,
                                    String studentTaskId, CommonPromptDTO character, String imageId) {
-        firebaseService.updatePromptStatusById(studentTaskId, imageId, character, "failed", taskAction.name() + " task failed");
+        firebasePromptService.updatePromptStatusById(studentTaskId, imageId, character, "failed", taskAction.name() + " task failed");
         characterRef.child("progress").setValueAsync("-1");
     }
 
