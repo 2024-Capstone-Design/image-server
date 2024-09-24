@@ -12,6 +12,7 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.builders.WebSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -37,6 +38,7 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
+                .cors(corsConfigurer -> corsConfigurer.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/actuator/health", "/error").permitAll()
@@ -68,6 +70,12 @@ public class SecurityConfig {
         return source;
     }
 
+    @Bean
+    public WebSecurityCustomizer webSecurityCustomizer() {
+        return web -> web.ignoring()
+                .requestMatchers("/error", "/favicon.ico", "/swagger-ui/**", "/api-docs/**");
+
+    }
 
     @Bean
     public PasswordEncoder passwordEncoder() {

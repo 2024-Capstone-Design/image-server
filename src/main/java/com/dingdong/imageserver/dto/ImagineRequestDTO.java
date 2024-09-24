@@ -20,6 +20,9 @@ public class ImagineRequestDTO implements Serializable {
     @NotNull
     private List<BackgroundDTO> backgrounds;
 
-    private String sketchImage;
+    @NotNull
+    private List<Long> optionIds;
 
+
+    private String sketchImage;
 }
