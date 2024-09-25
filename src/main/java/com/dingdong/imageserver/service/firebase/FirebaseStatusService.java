@@ -12,6 +12,7 @@ import com.google.firebase.database.FirebaseDatabase;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
@@ -94,6 +95,15 @@ public class FirebaseStatusService extends FirebaseBaseService {
     }
 
     private List<String> getListFromSnapshot(DataSnapshot snapshot, String field) {
-        return snapshot.child(field).exists() ? (List<String>) snapshot.child(field).getValue() : new ArrayList<>();
+        if (snapshot.child(field).exists()) {
+            Object value = snapshot.child(field).getValue();
+            if (value instanceof List) {
+                return (List<String>) value;
+            } else if (value instanceof String) {
+                // 문자열을 리스트로 변환
+                return Collections.singletonList((String) value);
+            }
+        }
+        return new ArrayList<>();
     }
 }

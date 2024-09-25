@@ -8,7 +8,7 @@ import com.google.firebase.database.FirebaseDatabase;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.Map;
+import java.util.HashMap;
 @Service
 public class FirebaseCharacterService extends FirebaseBaseService {
 
@@ -20,13 +20,12 @@ public class FirebaseCharacterService extends FirebaseBaseService {
     public void clearCharacterReferenceImage(ReImagineRequestDTO requestDTO) {
         DatabaseReference taskRef = getDatabaseReference(String.valueOf(requestDTO.getStudentTaskId()));
 
-        Map<String, Object> taskUpdates = Map.of(
-                FirebaseFieldConstants.COMPLETED_FIELD, false,
-                FirebaseFieldConstants.ERROR_FIELD, false,
-                FirebaseFieldConstants.START_TIME_FIELD, LocalDateTime.now().toString(),
-                FirebaseFieldConstants.END_TIME_FIELD, null,
-                FirebaseFieldConstants.REGENERATE_FIELD, true
-        );
+        HashMap<String, Object> taskUpdates = new HashMap<>();
+        taskUpdates.put(FirebaseFieldConstants.COMPLETED_FIELD, false);
+        taskUpdates.put(FirebaseFieldConstants.ERROR_FIELD, false);
+        taskUpdates.put(FirebaseFieldConstants.START_TIME_FIELD, LocalDateTime.now().toString());
+        taskUpdates.put(FirebaseFieldConstants.END_TIME_FIELD, null);
+        taskUpdates.put(FirebaseFieldConstants.REGENERATE_FIELD, true);
 
         updateFirebaseData(taskRef, taskUpdates);
 
@@ -36,10 +35,9 @@ public class FirebaseCharacterService extends FirebaseBaseService {
                 requestDTO.getImageId()
         );
 
-        Map<String, Object> updates = Map.of(
-                FirebaseFieldConstants.STATUS_FIELD, "imagining",
-                FirebaseFieldConstants.IMAGE_URL_FIELD, null
-        );
+        HashMap<String, Object> updates = new HashMap<>();
+        updates.put(FirebaseFieldConstants.STATUS_FIELD, "imagining");
+        updates.put(FirebaseFieldConstants.IMAGE_URL_FIELD, null);
 
         updateFirebaseData(ref, updates);
     }

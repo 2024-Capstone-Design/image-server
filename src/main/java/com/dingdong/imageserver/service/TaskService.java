@@ -51,39 +51,54 @@ public class TaskService {
         prompts.addAll(findNonProtagonists(requestDTO.getCharacters()));
         prompts.addAll(findBackgrounds(requestDTO.getBackgrounds()));
 
-        // Task 초기화
-        firebaseTaskService.initializeTaskInFirebase(requestDTO.getStudentTaskId());
-        String initialPrompt = createInitialPrompt(protagonist, requestDTO.getSketchImage(), requestDTO.getOptionIds());
+        // Firebase 작업 비동기 처리
+        firebaseTaskService.initializeTaskInFirebase(requestDTO.getStudentTaskId(), success -> {
+            if (success) {
+                // Firebase 작업 성공 후 다음 작업 실행
+                String initialPrompt = createInitialPrompt(protagonist, requestDTO.getSketchImage(), requestDTO.getOptionIds());
+                processImagineTask(protagonist, initialPrompt, prompts, requestDTO);
+            } else {
+                // 실패 시 처리
+            }
+        });
 
-        SubmitResultVO result = processImagineTask(protagonist, initialPrompt, prompts, String.valueOf(requestDTO.getStudentTaskId()));
-        return result;
+        return null; // 비동기 작업이므로 콜백에서 처리
     }
 
-    private SubmitResultVO processImagineTask(CommonPromptDTO protagonist, String initialPrompt, List<CommonPromptDTO> prompts, String studentTaskId) {
+
+    private SubmitResultVO processImagineTask(CommonPromptDTO protagonist, String initialPrompt, List<CommonPromptDTO> prompts, ImagineRequestDTO imagineRequestDTO) {
         SubmitResultVO result = apiService.submitImagineByPrompt(initialPrompt);
+        String studentTaskId = String.valueOf(imagineRequestDTO.getStudentTaskId());
+        Long fairytaleId = imagineRequestDTO.getFairytaleId();
         if (result.getCode() == ReturnCode.SUCCESS) {
-            String imageId = firebasePromptService.updatePromptStatus(studentTaskId, protagonist, initialPrompt, "imagining", null);
+            String imageId = firebasePromptService.updatePromptStatus(studentTaskId, fairytaleId, protagonist, initialPrompt, "imagining", null);
             taskStatusService.scheduleTaskStatusFetching(
                     false, TaskAction.IMAGINE, result.getResult().toString(),
-                    bgRemovedImageUrl -> handleImagineComplete(true, result, prompts, studentTaskId, protagonist, imageId),
-                    protagonist, studentTaskId, imageId
+                    bgRemovedImageUrl -> handleImagineComplete(true, result, prompts, imagineRequestDTO, protagonist, imageId),
+                    protagonist, studentTaskId, fairytaleId, imageId
             );
         } else {
-            firebasePromptService.updatePromptStatus(studentTaskId, protagonist, initialPrompt, "failed", "Failed to start imagine task");
+            System.out.println("FAIL!!!");
+            System.out.println(result);
+            firebasePromptService.updatePromptStatus(studentTaskId, fairytaleId, protagonist, initialPrompt, "failed", "Failed to start imagine task");
         }
         return result;
     }
 
-    private void handleImagineComplete(Boolean isContinue, SubmitResultVO result, List<CommonPromptDTO> prompts, String studentTaskId, CommonPromptDTO character, String imageId) {
+    private void handleImagineComplete(Boolean isContinue, SubmitResultVO result, List<CommonPromptDTO> prompts, ImagineRequestDTO imagineRequestDTO, CommonPromptDTO character, String imageId) {
         SubmitResultVO upscaleResult = upscaleCharacterImage(result.getResult().toString());
+        String studentTaskId = String.valueOf(imagineRequestDTO.getStudentTaskId());
+        Long fairytaleId = imagineRequestDTO.getFairytaleId();
         if (upscaleResult.getCode() == ReturnCode.SUCCESS) {
             taskStatusService.scheduleTaskStatusFetching(
                     true, TaskAction.UPSCALE, (String) upscaleResult.getResult(),
-                    bgRemovedImageUrl -> handleUpscaleComplete(isContinue, prompts, studentTaskId, bgRemovedImageUrl),
-                    character, studentTaskId, imageId
+                    bgRemovedImageUrl -> handleUpscaleComplete(isContinue, prompts, imagineRequestDTO, bgRemovedImageUrl),
+                    character, studentTaskId, fairytaleId, imageId
             );
         } else {
-            firebasePromptService.updatePromptStatusById(studentTaskId, imageId, character, "failed", "Failed to start upscale task");
+            System.out.println("FAIL!!!");
+            System.out.println(result);
+            firebasePromptService.updatePromptStatusById(studentTaskId, fairytaleId, imageId, character, "failed", "Failed to start upscale task");
         }
     }
 
@@ -101,47 +116,53 @@ public class TaskService {
     }
 
 
-    private void handleUpscaleComplete(Boolean isContinue, List<CommonPromptDTO> prompts, String studentTaskId, List<String> bgRemovedImageUrls) {
+    private void handleUpscaleComplete(Boolean isContinue, List<CommonPromptDTO> prompts, ImagineRequestDTO imagineRequestDTO, List<String> bgRemovedImageUrls) {
         if (isContinue) {
-            processRemainingPrompts(prompts, bgRemovedImageUrls, studentTaskId);
+            processRemainingPrompts(prompts, bgRemovedImageUrls, String.valueOf(imagineRequestDTO.getStudentTaskId()), imagineRequestDTO.getFairytaleId());
         } else if (taskStatusService.decrementPromptCount() <= 0) {
-            firebaseTaskService.finalizeTask(studentTaskId);
+            firebaseTaskService.finalizeTask(String.valueOf(imagineRequestDTO.getStudentTaskId()));
         }
     }
 
-    private void processRemainingPrompts(List<CommonPromptDTO> prompts, List<String> bgRemovedImageUrls, String studentTaskId) {
+    private void processRemainingPrompts(List<CommonPromptDTO> prompts, List<String> bgRemovedImageUrls, String studentTaskId, Long fairytaleId) {
         taskStatusService.setPromptCount(prompts.size());
         prompts.forEach(prompt -> {
-            processPromptTask(prompt, bgRemovedImageUrls.get(0), studentTaskId);
+            processPromptTask(prompt, bgRemovedImageUrls.get(0), studentTaskId, fairytaleId);
             pauseBetweenTasks();
         });
     }
 
-    private void processPromptTask(CommonPromptDTO promptDTO, String referenceImage, String studentTaskId) {
+    private void processPromptTask(CommonPromptDTO promptDTO, String referenceImage, String studentTaskId, Long fairytaleId) {
         String prompt = createPrompt(promptDTO, referenceImage);
         SubmitResultVO result = apiService.submitImagineByPrompt(prompt);
+
         if (result.getCode() == ReturnCode.SUCCESS) {
-            String imageId = firebasePromptService.updatePromptStatus(studentTaskId, promptDTO, prompt, "imagining", null);
+            String imageId = firebasePromptService.updatePromptStatus(studentTaskId, fairytaleId, promptDTO, prompt, "imagining", null);
             taskStatusService.scheduleTaskStatusFetching(
                     false, TaskAction.IMAGINE, (String) result.getResult(),
-                    bgRemovedImageUrl -> handleNonProtagonistComplete(result, promptDTO, studentTaskId, imageId),
-                    promptDTO, studentTaskId, imageId
+                    bgRemovedImageUrl -> handleNonProtagonistComplete(result, promptDTO, studentTaskId, fairytaleId, imageId),
+                    promptDTO, studentTaskId, fairytaleId, imageId
             );
         } else {
-            firebasePromptService.updatePromptStatus(studentTaskId, promptDTO, prompt, "failed", "Failed to start imagine task");
+            System.out.println("FAIL!!!");
+            System.out.println(result);
+            firebasePromptService.updatePromptStatus(studentTaskId, fairytaleId, promptDTO, prompt, "failed", "Failed to start imagine task");
         }
     }
 
-    private void handleNonProtagonistComplete(SubmitResultVO result, CommonPromptDTO promptDTO, String studentTaskId, String imageId) {
+    private void handleNonProtagonistComplete(SubmitResultVO result, CommonPromptDTO promptDTO,  String studentTaskId, Long fairytaleId, String imageId) {
         SubmitResultVO upscaleResult = upscaleCharacterImage(result.getResult().toString());
+
         if (upscaleResult.getCode() == ReturnCode.SUCCESS) {
             taskStatusService.scheduleTaskStatusFetching(
                     true, TaskAction.UPSCALE, (String) upscaleResult.getResult(),
                     bgRemovedImageUrl -> finalizeCharacterImage(promptDTO, studentTaskId, bgRemovedImageUrl, imageId),
-                    promptDTO, studentTaskId, imageId
+                    promptDTO, studentTaskId, fairytaleId, imageId
             );
         } else {
-            firebasePromptService.updatePromptStatusById(studentTaskId, imageId, promptDTO, "failed", "Failed to start upscale task");
+            System.out.println("FAIL!!!");
+            System.out.println(result);
+            firebasePromptService.updatePromptStatusById(studentTaskId, fairytaleId, imageId, promptDTO, "failed", "Failed to start upscale task");
         }
     }
 
@@ -190,9 +211,11 @@ public class TaskService {
         StringBuilder prompt = new StringBuilder(apiService.getPromptValueFromDatabase("character-content"))
                 .append(protagonist.getPrompt());
 
-        List<Option> selectedOptions = optionRepository.findAllById(optionIds);
-        for (Option option : selectedOptions) {
-            prompt.append(" ").append(option.getPrompt());
+        if (optionIds != null && ! optionIds.isEmpty()){
+            List<Option> selectedOptions = optionRepository.findAllById(optionIds);
+            for (Option option : selectedOptions) {
+                prompt.append(" ").append(option.getPrompt());
+            }
         }
 
         prompt.append(apiService.getPromptValueFromDatabase("character-style"))
@@ -217,7 +240,7 @@ public class TaskService {
                     .append(apiService.getPromptValueFromDatabase("background-style"))
                     .append(apiService.getPromptValueFromDatabase("background-parameter"));
         }
-        return prompt.append(" --sref ").append(referenceImage).toString();
+        return prompt.append(apiService.getPromptValueFromDatabase("character-sref")).append(referenceImage).toString();
     }
 
     public ImagineTaskStatusDTO getImagineStatus(String studentTaskId) {
@@ -243,7 +266,11 @@ public class TaskService {
             @Override
             public void onSuccess(String prompt, String name) {
                 // Firebase에서 캐릭터 참조 이미지 제거 (FirebaseCharacterService 사용)
+                System.out.println("HERE");
+
                 firebaseCharacterService.clearCharacterReferenceImage(requestDTO);
+
+                System.out.println("HERE2");
 
                 // 재생성 프로세스 시작
                 SubmitResultVO result = processRegenerate(requestDTO, prompt, name);
@@ -272,17 +299,20 @@ public class TaskService {
 
         CommonPromptDTO promptDTO = new CommonPromptDTO(requestDTO.getPromptType(), name, prompt);
         String studentTaskId = String.valueOf(requestDTO.getStudentTaskId());
+        Long fairytaleId = requestDTO.getFairytaleId();
         String imageId = String.valueOf(requestDTO.getImageId());
 
         if (result.getCode() == ReturnCode.SUCCESS) {
             taskStatusService.scheduleTaskStatusFetching(
                     false, TaskAction.IMAGINE, (String) result.getResult(),
-                    bgRemovedImageUrl -> handleNonProtagonistComplete(result, promptDTO, studentTaskId, imageId),
-                    promptDTO, studentTaskId, imageId
+                    bgRemovedImageUrl -> handleNonProtagonistComplete(result, promptDTO, studentTaskId, fairytaleId, imageId),
+                    promptDTO, studentTaskId, fairytaleId, imageId
             );
         } else {
+            System.out.println("FAIL!!!");
+            System.out.println(result);
             // firebasePromptService로 변경
-            firebasePromptService.updatePromptStatus(studentTaskId, promptDTO, prompt, "failed", "Failed to start imagine task");
+            firebasePromptService.updatePromptStatus(studentTaskId, fairytaleId, promptDTO, prompt, "failed", "Failed to start imagine task");
         }
         return result;
     }

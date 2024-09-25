@@ -1,5 +1,6 @@
 package com.dingdong.imageserver.service;
 
+import com.dingdong.imageserver.constant.FirebaseFieldConstants;
 import com.dingdong.imageserver.dto.prompt.CommonPromptDTO;
 import com.dingdong.imageserver.enums.TaskAction;
 import com.dingdong.imageserver.model.Task;
@@ -7,6 +8,7 @@ import com.dingdong.imageserver.service.firebase.FirebaseCharacterService;
 import com.dingdong.imageserver.service.firebase.FirebasePromptService;
 import com.google.firebase.database.DatabaseReference;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -15,6 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class TaskStatusService {
 
@@ -24,7 +27,7 @@ public class TaskStatusService {
     private final AtomicInteger promptCount = new AtomicInteger(0);
 
     public void scheduleTaskStatusFetching(Boolean bgRemove, TaskAction taskAction, String taskId,
-                                           Consumer<List<String>> onComplete, CommonPromptDTO character, String studentTaskId, String imageId) {
+                                           Consumer<List<String>> onComplete, CommonPromptDTO character, String studentTaskId, Long fairytaleId, String imageId) {
         CompletableFuture.runAsync(() -> {
             DatabaseReference characterRef = firebaseCharacterService.getCharacterReference(studentTaskId, imageId, character);
             while (true) {
@@ -33,14 +36,14 @@ public class TaskStatusService {
 
                 if (updatedTask.isSuccessful()) {
                     try {
-                        handleTaskSuccess(bgRemove, onComplete, characterRef, updatedTask, character, studentTaskId, imageId);
+                        handleTaskSuccess(onComplete, bgRemove,  characterRef, updatedTask, character, studentTaskId);
                     } catch (Exception e) {
                         e.printStackTrace();
                         throw new RuntimeException(e);
                     }
                     break;
                 } else if (updatedTask.isFailure()) {
-                    handleTaskFailure(characterRef, taskAction, studentTaskId, character, imageId);
+                    handleTaskFailure(onComplete, taskAction, studentTaskId, fairytaleId, character, imageId);
                     break;
                 }
                 sleepForTaskPolling();
@@ -57,26 +60,27 @@ public class TaskStatusService {
     }
 
     private void updateTaskProgress(DatabaseReference characterRef, Task task) {
-        characterRef.child("progress").setValueAsync(task.getProgress());
+        characterRef.child(FirebaseFieldConstants.PROGRESS_FIELD).setValueAsync(task.getProgress());
     }
 
-    private void handleTaskSuccess(Boolean bgRemove, Consumer<List<String>> onComplete, DatabaseReference characterRef,
-                                   Task task, CommonPromptDTO promptDTO, String studentTaskId, String imageId) throws Exception {
+    private void handleTaskSuccess(Consumer<List<String>> onComplete, Boolean bgRemove, DatabaseReference characterRef,
+                                   Task task, CommonPromptDTO promptDTO, String studentTaskId) {
+
         if (task.getAction() == TaskAction.UPSCALE && bgRemove) {
             List<String> backgroundRemovedImageUrls = apiService.getPostProcessingImageUrl(task.getImageUrl(), studentTaskId, promptDTO);
-            characterRef.child("image_url").setValueAsync(backgroundRemovedImageUrls);
-            characterRef.child("progress").setValueAsync("100%");
-            characterRef.child("status").setValueAsync("complete");
+            characterRef.child(FirebaseFieldConstants.IMAGE_URL_FIELD).setValueAsync(backgroundRemovedImageUrls);
+            characterRef.child(FirebaseFieldConstants.PROGRESS_FIELD).setValueAsync("100%");
+            characterRef.child(FirebaseFieldConstants.STATUS_FIELD).setValueAsync("complete");
             onComplete.accept(backgroundRemovedImageUrls);
         } else {
             onComplete.accept(null);
         }
     }
 
-    private void handleTaskFailure(DatabaseReference characterRef, TaskAction taskAction,
-                                   String studentTaskId, CommonPromptDTO character, String imageId) {
-        firebasePromptService.updatePromptStatusById(studentTaskId, imageId, character, "failed", taskAction.name() + " task failed");
-        characterRef.child("progress").setValueAsync("-1");
+    private void handleTaskFailure(Consumer<List<String>> onComplete, TaskAction taskAction,
+                                   String studentTaskId, Long fairytaleId, CommonPromptDTO character, String imageId) {
+        firebasePromptService.updatePromptStatusById(studentTaskId, fairytaleId, imageId, character, "failed", taskAction.name() + " task failed");
+        onComplete.accept(null);
     }
 
     private void sleepForTaskPolling() {

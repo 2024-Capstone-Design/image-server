@@ -15,6 +15,9 @@ public class ImagineRequestDTO implements Serializable {
     private long studentTaskId;
 
     @NotNull
+    private long fairytaleId;
+
+    @NotNull
     private List<CharacterDTO> characters;
 
     @NotNull

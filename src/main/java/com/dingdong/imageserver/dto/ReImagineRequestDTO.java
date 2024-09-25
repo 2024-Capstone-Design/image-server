@@ -12,6 +12,8 @@ public class ReImagineRequestDTO implements Serializable {
     @NotNull
     private long studentTaskId;
 
+    private long fairytaleId;
+
     @NotNull
     private String imageId;
 
