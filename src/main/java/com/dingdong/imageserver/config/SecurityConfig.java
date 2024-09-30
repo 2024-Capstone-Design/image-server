@@ -4,6 +4,7 @@ import com.dingdong.imageserver.auth.jwt.JwtAuthenticationEntryPoint;
 import com.dingdong.imageserver.auth.jwt.JwtFilter;
 import com.dingdong.imageserver.auth.jwt.TokenProvider;
 import com.dingdong.imageserver.exception.GlobalExceptionHandlerFilter;
+import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -44,8 +45,10 @@ public class SecurityConfig {
                                 "/actuator/health", "/error").permitAll()
                         .anyRequest().authenticated()
                 )
+
                 .exceptionHandling(config -> config
-                        .authenticationEntryPoint(jwtAuthenticationEntryPoint))
+                        .authenticationEntryPoint(jwtAuthenticationEntryPoint)
+                )
                 .sessionManagement(config -> config
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(new JwtFilter(tokenProvider), UsernamePasswordAuthenticationFilter.class)

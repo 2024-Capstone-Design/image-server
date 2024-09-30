@@ -2,8 +2,8 @@ package com.dingdong.imageserver.service;
 
 import com.dingdong.imageserver.dto.style.CategoryDTO;
 import com.dingdong.imageserver.dto.style.OptionDTO;
-import com.dingdong.imageserver.model.Category;
-import com.dingdong.imageserver.model.CategoryRepository;
+import com.dingdong.imageserver.model.style.Category;
+import com.dingdong.imageserver.model.style.CategoryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.util.List;

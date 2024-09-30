@@ -1,14 +1,15 @@
 package com.dingdong.imageserver.service.firebase;
 
 import com.dingdong.imageserver.constant.FirebaseFieldConstants;
-import com.dingdong.imageserver.dto.ReImagineRequestDTO;
-import com.dingdong.imageserver.dto.prompt.CommonPromptDTO;
-import com.dingdong.imageserver.model.DataCallback;
-import com.dingdong.imageserver.model.FairytaleImage;
-import com.dingdong.imageserver.model.FairytaleImageRepository;
+import com.dingdong.imageserver.dto.request.ReImagineRequestDTO;
+import com.dingdong.imageserver.dto.service.CommonImageGenerationDTO;
+import com.dingdong.imageserver.dto.DataCallback;
+import com.dingdong.imageserver.model.fairytaleImage.FairytaleImage;
+import com.dingdong.imageserver.model.fairytaleImage.FairytaleImageRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.firebase.database.*;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 @Service
+@Slf4j
 public class FirebasePromptService extends FirebaseBaseService {
 
     private final FairytaleImageRepository fairytaleImageRepository;
@@ -31,7 +33,8 @@ public class FirebasePromptService extends FirebaseBaseService {
     }
 
     // 프롬프트 상태 업데이트 메소드 (IMAGINE 시)
-    public String updatePromptStatus(String studentTaskId, Long fairytaleId, CommonPromptDTO promptDTO, String prompt, String status, String errorMessage) {
+    public String updatePromptStatus(String studentTaskId, Long fairytaleId, CommonImageGenerationDTO promptDTO, String prompt, String status, String errorMessage) {
+
         DatabaseReference characterRef = getDatabaseReference(studentTaskId, promptDTO.getPromptType().name()).push();
         String generatedId = characterRef.getKey();
 
@@ -39,26 +42,31 @@ public class FirebasePromptService extends FirebaseBaseService {
         updateFirebaseData(characterRef, updates);
 
         if (errorMessage != null) {
-            updateTaskErrorStatus(studentTaskId, true, fairytaleId);
+            System.out.println("errorMessage :: " + errorMessage);
+
+            updateTaskErrorStatus(studentTaskId, fairytaleId);
         }
 
         return generatedId;
     }
 
     // ID로 프롬프트 상태 업데이트 메소드 (UPSCALE 시)
-    public void updatePromptStatusById(String studentTaskId, Long fairytaleId, String imageId, CommonPromptDTO promptDTO, String status, String errorMessage) {
+    public void updatePromptStatusById(String studentTaskId, Long fairytaleId, String imageId, CommonImageGenerationDTO promptDTO, String status, String errorMessage) {
+
         DatabaseReference characterRef = getDatabaseReference(studentTaskId, promptDTO.getPromptType().name(), imageId);
 
         Map<String, Object> updates = createStatusUpdateMap(status, errorMessage);
         updateFirebaseData(characterRef, updates);
 
         if (errorMessage != null) {
-            updateTaskErrorStatus(studentTaskId, true, fairytaleId);
+            System.out.println("errorMessage :: " + errorMessage);
+
+            updateTaskErrorStatus(studentTaskId, fairytaleId);
         }
     }
 
     // 캐릭터 이미지 URL 업데이트 메소드
-    public void updateCharacterImageUrls(String studentTaskId, String imageId, CommonPromptDTO promptDTO, List<String> imageUrls) {
+    public void updateCharacterImageUrls(String studentTaskId, String imageId, CommonImageGenerationDTO promptDTO, List<String> imageUrls) {
         DatabaseReference characterRef = getDatabaseReference(studentTaskId, promptDTO.getPromptType().name(), imageId);
 
         Map<String, Object> updates = Map.of(
@@ -100,7 +108,7 @@ public class FirebasePromptService extends FirebaseBaseService {
     }
 
     // 에러 발생 시 default 이미지 반환하기
-    public void updateTaskErrorStatus(String studentTaskId, boolean isError, Long fairytaleId) {
+    public void updateTaskErrorStatus(String studentTaskId, Long fairytaleId) {
         // 이미지 업데이트
         updatePromptAndImages(studentTaskId, fairytaleId);
 

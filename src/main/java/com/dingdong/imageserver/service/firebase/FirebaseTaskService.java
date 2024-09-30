@@ -50,8 +50,8 @@ public class FirebaseTaskService extends FirebaseBaseService {
 
 
     // 작업 완료 처리 메소드
-    public void finalizeTask(String studentTaskId) {
-        DatabaseReference taskRef = getDatabaseReference(studentTaskId);
+    public void finalizeTask(long studentTaskId) {
+        DatabaseReference taskRef = getDatabaseReference(String.valueOf(studentTaskId));
         Map<String, Object> updateData = Map.of(
                 FirebaseFieldConstants.END_TIME_FIELD, LocalDateTime.now().toString(),
                 FirebaseFieldConstants.COMPLETED_FIELD, true

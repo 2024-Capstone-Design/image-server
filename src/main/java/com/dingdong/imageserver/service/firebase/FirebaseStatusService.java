@@ -1,9 +1,9 @@
 package com.dingdong.imageserver.service.firebase;
 
 import com.dingdong.imageserver.constant.FirebaseFieldConstants;
-import com.dingdong.imageserver.dto.ImagineStatusDTO;
-import com.dingdong.imageserver.dto.ImagineTaskStatusDTO;
-import com.dingdong.imageserver.dto.ReImagineRequestDTO;
+import com.dingdong.imageserver.dto.firebase.ImagineStatusDTO;
+import com.dingdong.imageserver.dto.firebase.ImagineTaskStatusDTO;
+import com.dingdong.imageserver.dto.request.ReImagineRequestDTO;
 import com.dingdong.imageserver.exception.CustomException;
 import com.dingdong.imageserver.response.ErrorStatus;
 import com.google.firebase.database.DataSnapshot;
