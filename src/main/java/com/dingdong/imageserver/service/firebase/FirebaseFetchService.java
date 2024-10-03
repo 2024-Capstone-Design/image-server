@@ -1,14 +1,13 @@
 package com.dingdong.imageserver.service.firebase;
 
 import com.dingdong.imageserver.constant.FirebaseFieldConstants;
+import com.dingdong.imageserver.dto.DataCallback;
 import com.dingdong.imageserver.dto.firebase.ImagineStatusDTO;
 import com.dingdong.imageserver.dto.firebase.ImagineTaskStatusDTO;
 import com.dingdong.imageserver.dto.request.ReImagineRequestDTO;
 import com.dingdong.imageserver.exception.CustomException;
 import com.dingdong.imageserver.response.ErrorStatus;
-import com.google.firebase.database.DataSnapshot;
-import com.google.firebase.database.DatabaseReference;
-import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.*;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -16,14 +15,20 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
-@Service
-public class FirebaseStatusService extends FirebaseBaseService {
 
-    public FirebaseStatusService(FirebaseDatabase firebaseDatabase) {
+/**
+ * 이미지 생성 결과 조회(fetch) 서비로
+ */
+@Service
+public class FirebaseFetchService extends FirebaseBaseService {
+
+    public FirebaseFetchService(FirebaseDatabase firebaseDatabase) {
         super(firebaseDatabase);
     }
 
-    // Firebase에서 작업 상태를 조회하는 메소드
+    /**
+     * studentTaskId로 작업 상태 조회하는 메소드
+     */
     public ImagineTaskStatusDTO getImagineStatusFromFirebase(String studentTaskId, int timeoutInSeconds)
             throws InterruptedException, ExecutionException, TimeoutException, CustomException {
 
@@ -43,8 +48,10 @@ public class FirebaseStatusService extends FirebaseBaseService {
         return new ImagineTaskStatusDTO(completed, error, startTime, endTime, characters, backgrounds);
     }
 
-    // 이미지 ID로 데이터 조회하는 메소드
-    public ImagineStatusDTO getImagineStatusWithImageIdFromFirebase(ReImagineRequestDTO requestDTO, int timeoutSeconds)
+    /**
+     * studentTaskId, imageId로 작업 상태 조회하는 메소드
+     */
+    public ImagineStatusDTO getImagineStatusWithImageId(ReImagineRequestDTO requestDTO, int timeoutSeconds)
             throws InterruptedException, ExecutionException, TimeoutException, CustomException {
 
         DatabaseReference ref = getDatabaseReference(
@@ -61,7 +68,7 @@ public class FirebaseStatusService extends FirebaseBaseService {
         return getImagineStatusFromSnapshot(snapshot);
     }
 
-    // 스냅샷에서 프롬프트 리스트 추출
+    // 스냅샷에서 이미지 객체 추출
     private List<ImagineStatusDTO> getPromptListFromSnapshot(DataSnapshot snapshot, String promptType) {
         List<ImagineStatusDTO> prompts = new ArrayList<>();
         if (snapshot.child(promptType).exists()) {
@@ -100,7 +107,6 @@ public class FirebaseStatusService extends FirebaseBaseService {
             if (value instanceof List) {
                 return (List<String>) value;
             } else if (value instanceof String) {
-                // 문자열을 리스트로 변환
                 return Collections.singletonList((String) value);
             }
         }
