@@ -7,8 +7,8 @@ import com.dingdong.imageserver.dto.midjourney.SubmitResultVO;
 import com.dingdong.imageserver.dto.service.CommonImageGenerationDTO;
 import com.dingdong.imageserver.enums.TaskAction;
 import com.dingdong.imageserver.model.task.Task;
-import com.dingdong.imageserver.prompt.Prompt;
-import com.dingdong.imageserver.prompt.PromptRepository;
+import com.dingdong.imageserver.model.prompt.Prompt;
+import com.dingdong.imageserver.model.prompt.PromptRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
@@ -22,7 +22,7 @@ import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
-public class MidjourneyApiService {
+public class ThirdPartyIApiService {
 
     private final RestTemplate restTemplate;
     private final PromptRepository promptRepository;

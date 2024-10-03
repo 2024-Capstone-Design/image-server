@@ -7,6 +7,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestTemplate;
 
+/**
+ * midjourney 이미지 생성 prompt값 저장 경로
+ */
 @Configuration
 @Getter
 @Setter

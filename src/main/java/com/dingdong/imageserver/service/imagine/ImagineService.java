@@ -7,15 +7,15 @@ import com.dingdong.imageserver.dto.request.ReImagineRequestDTO;
 import com.dingdong.imageserver.dto.service.CommonImageGenerationDTO;
 import com.dingdong.imageserver.enums.PromptType;
 import com.dingdong.imageserver.exception.CustomException;
-import com.dingdong.imageserver.dto.DataCallback;
+import com.dingdong.imageserver.model.style.Option;
+import com.dingdong.imageserver.model.style.OptionRepository;
 import com.dingdong.imageserver.response.ErrorStatus;
-import com.dingdong.imageserver.service.firebase.FirebaseCharacterService;
-import com.dingdong.imageserver.service.firebase.FirebasePromptService;
-import com.dingdong.imageserver.service.firebase.FirebaseStatusService;
-import com.dingdong.imageserver.service.firebase.FirebaseTaskService;
+import com.dingdong.imageserver.service.firebase.FirebaseUpdateService;
+import com.dingdong.imageserver.service.firebase.FirebaseFetchService;
 import com.dingdong.imageserver.utils.GenerationUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -40,11 +40,10 @@ public class ImagineService {
 
     private final GenerationUtils generationUtils;
     private final MidjourneyTaskService midjourneyTaskService;
-    private final MidjourneyApiService midjourneyApiService;
-    private final FirebaseTaskService firebaseTaskService;
-    private final FirebasePromptService firebasePromptService;
-    private final FirebaseStatusService firebaseStatusService;
-    private final FirebaseCharacterService firebaseCharacterService;
+    private final ThirdPartyIApiService thirdPartyIApiService;
+    private final FirebaseUpdateService firebaseUpdateService;
+    private final FirebaseFetchService firebaseFetchService;
+    private final OptionRepository optionRepository;
 
     /**
      * 메인 캐릭터가 생성된 후 다른 캐릭터들과 배경을 한 번에 생성하는 서비스
@@ -53,34 +52,28 @@ public class ImagineService {
     public void generateCharactersAndBackgrounds(ImagineRequestDTO requestDTO) {
 
         // 0. StudentTaskId/{path} 경로로 Firebase 작업 비동기 처리
-        firebaseTaskService.initializeTaskInFirebase(requestDTO.getStudentTaskId(), success -> {
+        firebaseUpdateService.initializeTaskInFirebase(requestDTO.getStudentTaskId(), success -> {
             if (success) {
-
                 // 1. 먼저 주인공 캐릭터 생성 (참조될 캐릭터)
                 CommonImageGenerationDTO mainCharacter = generationUtils.findProtagonist(requestDTO.getCharacters());
                 if (mainCharacter == null) {
                     throw new IllegalArgumentException("Main character not found.");
                 }
 
-                // 주인공 캐릭터 생성
-                convertPrompt(mainCharacter, null);
-                String imageUrl = midjourneyTaskService.processTask(requestDTO.getStudentTaskId(), requestDTO.getFairytaleId(), mainCharacter);
-                log.info("ref 이미지 생성 완료 "+ imageUrl);
+                // 주인공 캐릭터 생성 비동기 호출
+                convertPrompt(requestDTO.getStudentTaskId(), mainCharacter, null, requestDTO.getOptionIds());
+                midjourneyTaskService.processTask(requestDTO.getStudentTaskId(), requestDTO.getFairytaleId(), mainCharacter)
+                        .thenAccept(imageUrl -> {
+                            log.info("ref 이미지 생성 완료 " + imageUrl);
 
-                // 2. 주인공 생성 후 비동기로 다른 캐릭터 및 배경 생성
-                CompletableFuture.runAsync(() -> {
-                    createRemainingCharactersAndBackgrounds(imageUrl, requestDTO);
-                });
-
-            } else {
-                // 실패 처리
+                            // 2. 주인공 생성 후 다른 캐릭터 및 배경 생성
+                            createRemainingCharactersAndBackgrounds(imageUrl, requestDTO);
+                        });
             }
         });
-
-
     }
 
-    private void createRemainingCharactersAndBackgrounds(String refImageUrl, ImagineRequestDTO requestDTO) {
+    void createRemainingCharactersAndBackgrounds(String refImageUrl, ImagineRequestDTO requestDTO) {
         List<CommonImageGenerationDTO> nonProtagonistPrompts = generationUtils.findNonProtagonists(requestDTO.getCharacters());
         List<CommonImageGenerationDTO> backgroundPrompts = generationUtils.findBackgrounds(requestDTO.getBackgrounds());
 
@@ -90,92 +83,77 @@ public class ImagineService {
         generateListImages(refImageUrl, requestDTO, nonProtagonistPrompts, futures);
         generateListImages(refImageUrl, requestDTO, backgroundPrompts, futures);
 
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        // 모든 비동기 작업을 기다림
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).thenRun(() -> {
+            log.info("모든 비동기 작업이 완료되었습니다.");
+            firebaseUpdateService.finalizeTask(requestDTO.getStudentTaskId());
+        });
 
-        System.out.println("모든 비동기 작업이 완료되었습니다.");
-        firebaseTaskService.finalizeTask(requestDTO.getStudentTaskId());
     }
 
-    private void generateListImages(String refImageUrl, ImagineRequestDTO requestDTO, List<CommonImageGenerationDTO> nonProtagonistPrompts, List<CompletableFuture<Void>> futures) {
-        nonProtagonistPrompts.forEach(imageGenerationDTO -> {
-            log.info("생성 "+ imageGenerationDTO);
-            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                convertPrompt(imageGenerationDTO, refImageUrl);
-                midjourneyTaskService.processTask(requestDTO.getStudentTaskId(), requestDTO.getFairytaleId(), imageGenerationDTO);
-            });
+    void generateListImages(String refImageUrl, ImagineRequestDTO requestDTO, List<CommonImageGenerationDTO> prompts, List<CompletableFuture<Void>> futures) {
+        prompts.forEach(imageGenerationDTO -> {
+            log.info("생성 " + imageGenerationDTO);
+            convertPrompt(requestDTO.getStudentTaskId(), imageGenerationDTO, refImageUrl, null);
+            CompletableFuture<Void> future = midjourneyTaskService.processTask(requestDTO.getStudentTaskId(), requestDTO.getFairytaleId(), imageGenerationDTO)
+                    .thenAccept(imageUrl -> {
+                        log.info(requestDTO.getStudentTaskId() + " " + requestDTO.getFairytaleId() + " 이미지 처리 완료: " + imageUrl);
+                    });
             futures.add(future);
         });
     }
 
-    private void convertPrompt(CommonImageGenerationDTO promptDTO, String referenceImage) {
+    private void convertPrompt(Long studentTaskId, CommonImageGenerationDTO promptDTO, String referenceImage, List<Long> optionIds) {
         StringBuilder prompt = new StringBuilder();
+        prompt.append(studentTaskId + " ");
         if (promptDTO.getPromptType().equals(PromptType.CHARACTER)) {
-            prompt.append(midjourneyApiService.getPromptValueFromDatabase("character-content"))
-                    .append(promptDTO.getPrompt())
-                    .append(midjourneyApiService.getPromptValueFromDatabase("character-style"))
-                    .append(midjourneyApiService.getPromptValueFromDatabase("character-parameter"));
+            prompt.append(thirdPartyIApiService.getPromptValueFromDatabase("character-content"))
+                    .append(promptDTO.getPrompt());
+
+            if (optionIds != null && ! optionIds.isEmpty()){
+                List<Option> selectedOptions = optionRepository.findAllById(optionIds);
+                for (Option option : selectedOptions) {
+                    prompt.append(", ").append(option.getPrompt());
+                }
+            }
+
+            prompt.append(thirdPartyIApiService.getPromptValueFromDatabase("character-style"))
+                    .append(thirdPartyIApiService.getPromptValueFromDatabase("character-parameter"));
+
         } else {
-            prompt.append(midjourneyApiService.getPromptValueFromDatabase("background-content"))
+            prompt.append(thirdPartyIApiService.getPromptValueFromDatabase("background-content"))
                     .append(promptDTO.getPrompt())
-                    .append(midjourneyApiService.getPromptValueFromDatabase("background-style"))
-                    .append(midjourneyApiService.getPromptValueFromDatabase("background-parameter"));
+                    .append(thirdPartyIApiService.getPromptValueFromDatabase("background-style"))
+                    .append(thirdPartyIApiService.getPromptValueFromDatabase("background-parameter"));
         }
 
         if (referenceImage != null){
-            prompt.append(" " + midjourneyApiService.getPromptValueFromDatabase("character-sref")).append(referenceImage).toString();
+            prompt.append(" " + thirdPartyIApiService.getPromptValueFromDatabase("character-sref")).append(referenceImage).toString();
         }
 
         promptDTO.setPrompt(String.valueOf(prompt));
     }
 
-
-    public void regenerate(ReImagineRequestDTO requestDTO, DataCallback callback) {
-        // Firebase에서 해당 prompt, name을 가져오는 작업 (FirebasePromptService 사용)
-        firebasePromptService.getPromptById(requestDTO, new DataCallback() {
-            @Override
-            public void onSuccess(String prompt, String name) {
-                // 비동기로 재생성 프로세스 실행
-                CompletableFuture.runAsync(() -> {
-                    // 캐릭터 참조 이미지 클리어
-                    firebaseCharacterService.clearCharacterReferenceImage(requestDTO);
-                    // 재생성 프로세스 시작
-                    midjourneyTaskService.processTask(requestDTO.getStudentTaskId(), requestDTO.getFairytaleId(),
-                            new CommonImageGenerationDTO(requestDTO.getPromptType(), name, prompt));
-                    // Firebase에서 작업 완료 처리
-                    firebaseTaskService.finalizeTask(requestDTO.getStudentTaskId());
-                });
-
-                // 프로세스가 완료되기 전에 callback 성공 반환
-                callback.onSuccess(prompt, name);
-            }
-
-            @Override
-            public void onFailure(String errorMessage) {
-                // 'Data not found' 오류 발생 시 404로 처리
-                if ("Data not found".equals(errorMessage)) {
-                    callback.onFailure("404"); // 404로 표시
-                } else {
-                    callback.onFailure("Failed to get prompt: " + errorMessage);
-                }
-            }
-        });
+    @Async("taskExecutor")
+    public void regenerate(ReImagineRequestDTO requestDTO) throws ExecutionException, InterruptedException, TimeoutException {
+        ImagineStatusDTO imagineStatusDTO = firebaseFetchService.getImagineStatusWithImageId(requestDTO, 10);
+        if (imagineStatusDTO != null){
+            firebaseUpdateService.clearCharacterReferenceImage(requestDTO);
+            midjourneyTaskService.processTask(requestDTO.getStudentTaskId(), requestDTO.getFairytaleId(),
+                            new CommonImageGenerationDTO(requestDTO.getPromptType(), imagineStatusDTO.getName(), imagineStatusDTO.getPrompt()))
+                    .thenAccept(imageUrl -> {
+                        log.info("이미지 재생성 완료 " + imageUrl);
+                        firebaseUpdateService.finalizeTask(requestDTO.getStudentTaskId());
+                    });
+        }
     }
 
     public ImagineTaskStatusDTO getImagineStatus(String studentTaskId) {
         try {
-            return firebaseStatusService.getImagineStatusFromFirebase(studentTaskId, 10);
+            return firebaseFetchService.getImagineStatusFromFirebase(studentTaskId, 10);
         } catch (InterruptedException | ExecutionException | TimeoutException e) {
             throw new CustomException(ErrorStatus.SERVER_ERROR, e.getMessage());
         }
     }
-
-    public ImagineStatusDTO getImagineStatusWithImageId(ReImagineRequestDTO requestDTO) {
-        try {
-            return firebaseStatusService.getImagineStatusWithImageIdFromFirebase(requestDTO, 10);
-        } catch (InterruptedException | ExecutionException | TimeoutException e) {
-            throw new CustomException(ErrorStatus.SERVER_ERROR, e.getMessage());
-        }
-    }
-
 
 }

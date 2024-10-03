@@ -15,6 +15,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.async.DeferredResult;
 
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
+
 @RestController
 @Slf4j
 @RequestMapping("/api/v1/imagine")
@@ -29,6 +32,7 @@ public class ImagineController {
      */
     @PostMapping("/generate")
     public ResponseEntity<ApiResponseDTO<String>> imagine(@RequestBody ImagineRequestDTO requestDTO) {
+        log.info("REQUEST IMAGE GENERATION " + requestDTO);
         imagineService.generateCharactersAndBackgrounds(requestDTO);
         return ApiResponseDTO.success(SuccessStatus.IMAGINE_REQUEST_SUCCESS);
     }
@@ -40,41 +44,14 @@ public class ImagineController {
      */
 
     @PostMapping("/regenerate")
-    public DeferredResult<ResponseEntity<ApiResponseDTO<String>>> regenerate(@RequestBody ReImagineRequestDTO requestDTO) {
-        DeferredResult<ResponseEntity<ApiResponseDTO<String>>> deferredResult = new DeferredResult<>();
+    public ResponseEntity<ApiResponseDTO<String>> regenerate(@RequestBody ReImagineRequestDTO requestDTO) throws ExecutionException, InterruptedException, TimeoutException {
+        imagineService.regenerate(requestDTO);
 
-        imagineService.regenerate(requestDTO, new DataCallback() {
-            @Override
-            public void onSuccess(String prompt, String name) {
-                deferredResult.setResult(ApiResponseDTO.success(SuccessStatus.REIMAGINE_REQUEST_SUCCESS));
-            }
-
-            @Override
-            public void onFailure(String errorMessage) {
-                if ("404".equals(errorMessage)) {
-                    deferredResult.setErrorResult(ApiResponseDTO.fail(ErrorStatus.ENTITY_NOT_FOUND, "Prompt data not found"));
-                } else {
-                    deferredResult.setErrorResult(ApiResponseDTO.fail(ErrorStatus.SERVER_ERROR, errorMessage));
-                }
-            }
-        });
-
-        return deferredResult;
+        return ApiResponseDTO.success(SuccessStatus.REIMAGINE_REQUEST_SUCCESS);
     }
 
     /**
-     * 이미지 재생성 상태 조회 with imageId
-     * @param requestDTO
-     * @return
-     */
-    @GetMapping("/regenerate/status")
-    public ResponseEntity<ApiResponseDTO<ImagineStatusDTO>> getImagineStatusWithImageId(@RequestBody ReImagineRequestDTO requestDTO) {
-        ImagineStatusDTO response = imagineService.getImagineStatusWithImageId(requestDTO);
-        return ApiResponseDTO.success(SuccessStatus.REIMAGINE_STATUS_SUCCESS, response);
-    }
-
-    /**
-     * 이미지 재생성 상태 조회 with studentTaskId
+     * 이미지 생성 상태 조회 with studentTaskId
      * @param studentTaskId
      * @return
      */

@@ -1,4 +1,4 @@
-package com.dingdong.imageserver.prompt;
+package com.dingdong.imageserver.model.prompt;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;

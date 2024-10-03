@@ -1,5 +1,8 @@
 package com.dingdong.imageserver.dto.service;
 
+import lombok.Data;
+
+@Data
 public class TaskResult {
     private String taskId;
     private String imageId;
