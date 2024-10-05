@@ -1,19 +1,15 @@
 package com.dingdong.imageserver.controller;
 
-import com.dingdong.imageserver.dto.firebase.ImagineStatusDTO;
 import com.dingdong.imageserver.dto.firebase.ImagineTaskStatusDTO;
 import com.dingdong.imageserver.dto.request.ImagineRequestDTO;
 import com.dingdong.imageserver.dto.request.ReImagineRequestDTO;
-import com.dingdong.imageserver.dto.DataCallback;
 import com.dingdong.imageserver.response.ApiResponseDTO;
-import com.dingdong.imageserver.response.ErrorStatus;
 import com.dingdong.imageserver.response.SuccessStatus;
 import com.dingdong.imageserver.service.imagine.ImagineService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.context.request.async.DeferredResult;
 
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;

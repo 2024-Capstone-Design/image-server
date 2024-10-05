@@ -57,7 +57,7 @@ public class ImagineService {
                 // 1. 먼저 주인공 캐릭터 생성 (참조될 캐릭터)
                 CommonImageGenerationDTO mainCharacter = generationUtils.findProtagonist(requestDTO.getCharacters());
                 if (mainCharacter == null) {
-                    throw new IllegalArgumentException("Main character not found.");
+                    throw new CustomException(ErrorStatus.ENTITY_NOT_FOUND, "Main character not found.");
                 }
 
                 // 주인공 캐릭터 생성 비동기 호출

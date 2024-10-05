@@ -10,6 +10,7 @@ import com.dingdong.imageserver.model.task.Task;
 import com.dingdong.imageserver.model.prompt.Prompt;
 import com.dingdong.imageserver.model.prompt.PromptRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ThirdPartyIApiService {
@@ -81,7 +83,7 @@ public class ThirdPartyIApiService {
             return extractImageUrlsFromResponse(response, promptDTO.getName());
         } catch (Exception e) {
             e.printStackTrace();
-            System.out.println("Error during background removal: " + e.getMessage());
+            log.error("Error during background removal: " + e.getMessage());
             return Collections.emptyList();
         }
     }
@@ -98,7 +100,7 @@ public class ThirdPartyIApiService {
             Map<String, List<String>> characterUrlMap = response.getBody().get(0);
             return characterUrlMap.getOrDefault(characterName, Collections.emptyList());
         } else {
-            System.out.println("Failed to get background removed image URLs: " + response.getStatusCode());
+            log.error("Failed to get background removed image URLs: " + response.getStatusCode());
             return Collections.emptyList();
         }
     }

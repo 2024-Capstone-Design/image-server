@@ -6,7 +6,9 @@ import com.dingdong.imageserver.dto.service.CommonImageGenerationDTO;
 import com.dingdong.imageserver.dto.service.TaskResult;
 import com.dingdong.imageserver.enums.ReturnCode;
 import com.dingdong.imageserver.enums.TaskAction;
+import com.dingdong.imageserver.exception.CustomException;
 import com.dingdong.imageserver.model.task.Task;
+import com.dingdong.imageserver.response.ErrorStatus;
 import com.dingdong.imageserver.service.firebase.FirebaseUpdateService;
 import com.google.firebase.database.DatabaseReference;
 import lombok.RequiredArgsConstructor;
@@ -34,94 +36,72 @@ public class TaskStatusService {
         log.info("scheduleTaskStatusFetching 작업 수행중 : " + studentTaskId + " " + imageId);
 
         DatabaseReference characterRef = firebaseUpdateService.getCharacterReference(studentTaskId, imageId, character);
-        int maxRetries = 10;  // 최대 재시도 횟수
-        int retryCount = 0;  // 현재 재시도 횟수
+        int maxRetries = 10;
+        int retryCount = 0;
 
         while (retryCount < maxRetries) {
             Task updatedTask = thirdPartyIApiService.fetchAndSaveTask(result[0].getResult());
-            updateTaskProgress(characterRef, updatedTask);
+            firebaseUpdateService.updateTaskProgress(characterRef, updatedTask);
 
-            log.info("scheduleTaskStatusFetching while문에서 작업 수행중 : " + studentTaskId + " " + imageId + " " + result[0] + " " + updatedTask);
+            log.info(" == scheduleTaskStatusFetching while문에서 작업 수행중 == " + studentTaskId + " " + imageId + " " + result[0] + " " + updatedTask);
 
             if (updatedTask.isSuccessful()) {
                 try {
-                    handleTaskSuccess(characterRef, updatedTask, character, studentTaskId);
-                    return result[0].getResult();  // 성공 시 Task Id 반환
+                    firebaseUpdateService.handleTaskSuccess(characterRef, updatedTask, character, studentTaskId);
+                    return result[0].getResult();
                 } catch (Exception e) {
                     e.printStackTrace();
-                    throw new RuntimeException(e);
+                    throw new CustomException(ErrorStatus.SERVER_ERROR, result[0].getResult() + e.getMessage());
                 }
-
             } else if (updatedTask.isFailure()) {
                 retryCount++;
-                log.info("Task Failed, Retrying... (" + retryCount + "/" + maxRetries + ")");
+                log.info("Task 실패, Retrying... (" + retryCount + "/" + maxRetries + ") " + updatedTask.getFailReason());
                 if (prompt != null) {
-                    if (taskAction.equals(TaskAction.IMAGINE)) {
-                        result[0] = thirdPartyIApiService.submitImagineByPrompt(prompt);
-                    } else if (taskAction.equals(TaskAction.UPSCALE)) {
-                        result[0] = thirdPartyIApiService.submitUpscaleByTaskId(taskResultForUpscale.getTaskId());
+                    result[0] = retryTask(taskAction, result[0], prompt, taskResultForUpscale, 5);
+                    if (result[0] == null) {
+                        firebaseUpdateService.handleTaskFailure(taskAction, studentTaskId, character, imageId, "scheduleTaskStatusFetching FAIL");
+                        return null;
                     }
-
-                    sleepRandomTimeForTaskPolling();
-
-                    if (result[0].getCode() == ReturnCode.SUCCESS || result[0].getCode() == ReturnCode.IN_QUEUE) {
-                        log.info(studentTaskId + imageId + " 첫번째 다시 시도해서 성공");
-                        continue;
-                    } else {
-                        log.error(studentTaskId + imageId + " 첫번째 다시 시도했지만 실패함 " + result[0]);
-                        if (taskAction.equals(TaskAction.IMAGINE)) {
-                            result[0] = thirdPartyIApiService.submitImagineByPrompt(prompt);
-                        } else if (taskAction.equals(TaskAction.UPSCALE)) {
-                            result[0] = thirdPartyIApiService.submitUpscaleByTaskId(taskResultForUpscale.getTaskId());
-                        }
-
-                        sleepRandomTimeForTaskPolling();
-
-                        if (result[0].getCode() == ReturnCode.SUCCESS || result[0].getCode() == ReturnCode.IN_QUEUE) {
-                            continue;
-                        } else {
-                            log.error(studentTaskId + imageId + " 두번째 다시 시도했지만 실패함 " + result[0]);
-                            handleTaskFailure(taskAction, studentTaskId, character, imageId, "scheduleTaskStatusFetching FAIL");
-                            return null;
-                        }
-                    }
-                }
-                else {
-                    log.error(studentTaskId + imageId + " TASK FAIL scheduleTaskStatusFetching FAIL, prompt is null");
-                    handleTaskFailure(taskAction, studentTaskId, character, imageId, "scheduleTaskStatusFetching FAIL, prompt is null");
+                } else {
+                    firebaseUpdateService.handleTaskFailure(taskAction, studentTaskId, character, imageId, "scheduleTaskStatusFetching FAIL, prompt is null");
                     return null;
                 }
             }
-            sleepRandomTimeForTaskPolling();  // 재시도 간격 대기
+            sleepRandomTimeForTaskPolling();
         }
-        log.error(studentTaskId + imageId + " TASK FAIL scheduleTaskStatusFetching FAIL");
-        handleTaskFailure(taskAction, studentTaskId, character, imageId, "scheduleTaskStatusFetching FAIL");
+        firebaseUpdateService.handleTaskFailure(taskAction, studentTaskId, character, imageId, "scheduleTaskStatusFetching FAIL");
         return null;
     }
 
-    private void updateTaskProgress(DatabaseReference characterRef, Task task) {
-        characterRef.child(FirebaseFieldConstants.PROGRESS_FIELD).setValueAsync(task.getProgress());
-    }
+    private SubmitResultVO retryTask(TaskAction taskAction, SubmitResultVO result, String prompt, TaskResult taskResultForUpscale, int maxRetries) {
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            if (taskAction.equals(TaskAction.IMAGINE)) {
+                result = thirdPartyIApiService.submitImagineByPrompt(prompt);
+            } else if (taskAction.equals(TaskAction.UPSCALE)) {
+                result = thirdPartyIApiService.submitUpscaleByTaskId(taskResultForUpscale.getTaskId());
+            }
 
-    private void handleTaskSuccess(DatabaseReference characterRef,
-                                   Task task, CommonImageGenerationDTO promptDTO, String studentTaskId) {
-        if (task.getAction() == TaskAction.UPSCALE) {
-            List<String> backgroundRemovedImageUrls = thirdPartyIApiService.getPostProcessingImageUrl(task.getImageUrl(), studentTaskId, promptDTO);
-            characterRef.child(FirebaseFieldConstants.IMAGE_URL_FIELD).setValueAsync(backgroundRemovedImageUrls);
-            characterRef.child(FirebaseFieldConstants.PROGRESS_FIELD).setValueAsync("100%");
-            characterRef.child(FirebaseFieldConstants.STATUS_FIELD).setValueAsync("complete");
-            characterRef.child(FirebaseFieldConstants.END_TIME_FIELD).setValueAsync(LocalDateTime.now().toString());
+            sleepRandomTimeForTaskPolling();
+
+            if (result.getCode() == ReturnCode.SUCCESS || result.getCode() == ReturnCode.IN_QUEUE) {
+                return result;
+            }
+
+            log.error("시도 " + attempt + " 실패함: " + result);
+
+            // 최대 시도 횟수에 도달하면 null을 반환
+            if (attempt == maxRetries) {
+                log.error("모든 시도 실패. 더 이상 재시도하지 않음.");
+                return null;
+            }
         }
+
+        return null;
     }
 
-    private void handleTaskFailure(TaskAction taskAction,
-                                   String studentTaskId, CommonImageGenerationDTO character, String imageId, String errorMessage) {
-        firebaseUpdateService.updateErrorStatusById(studentTaskId, imageId, character, "failed", taskAction.name() + " " + errorMessage);
-    }
 
     private void sleepRandomTimeForTaskPolling() {
         try {
-            // 3초(1000ms)에서 10초(5000ms) 사이의 랜덤 시간
             int randomSleepTime = ThreadLocalRandom.current().nextInt(3000, 10001);
             Thread.sleep(randomSleepTime);
         } catch (InterruptedException e) {

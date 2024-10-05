@@ -5,7 +5,9 @@ import com.dingdong.imageserver.dto.service.TaskResult;
 import com.dingdong.imageserver.dto.service.CommonImageGenerationDTO;
 import com.dingdong.imageserver.enums.ReturnCode;
 import com.dingdong.imageserver.enums.TaskAction;
+import com.dingdong.imageserver.exception.CustomException;
 import com.dingdong.imageserver.model.task.Task;
+import com.dingdong.imageserver.response.ErrorStatus;
 import com.dingdong.imageserver.service.firebase.FirebaseUpdateService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,16 +50,16 @@ public class MidjourneyTaskService {
     }
 
     /**
-     * IMAGINE 작업
+     * IMAGINE, UPSCALE 작업
      *
      */
-    public TaskResult submitTask(long studentTaskId, CommonImageGenerationDTO protagonist, TaskAction taskAction, TaskResult taskResult) {
+    public TaskResult submitTask(long studentTaskId, CommonImageGenerationDTO commonImageGenerationDTO, TaskAction taskAction, TaskResult taskResult) {
         SubmitResultVO result = null;
         String imageId = null;
-        String prompt = protagonist.getPrompt();
+        String prompt = commonImageGenerationDTO.getPrompt();
 
         if (taskAction.equals(taskAction.IMAGINE)) {
-            imageId = firebaseUpdateService.updatePromptStatus(String.valueOf(studentTaskId), protagonist, prompt, "imagining");
+            imageId = firebaseUpdateService.updatePromptStatus(String.valueOf(studentTaskId), commonImageGenerationDTO, prompt, "imagining");
             result = thirdPartyIApiService.submitImagineByPrompt(prompt);
         } else if (taskAction.equals(taskAction.UPSCALE)) {
             if (taskResult == null) {
@@ -75,7 +77,7 @@ public class MidjourneyTaskService {
 
             // CompletableFuture를 사용하여 최종 결과를 반환하도록 처리
             String taskId = taskStatusService.scheduleTaskStatusFetching(
-                    taskAction, result, protagonist, String.valueOf(studentTaskId), imageId, prompt, taskResult);
+                    taskAction, result, commonImageGenerationDTO, String.valueOf(studentTaskId), imageId, prompt, taskResult);
 
             if (taskId != null) {
                 return new TaskResult(taskId, imageId);
@@ -88,9 +90,9 @@ public class MidjourneyTaskService {
             }
 
         } else {
-            throw new RuntimeException(result.getResult());
+            throw new CustomException(ErrorStatus.SERVER_ERROR, result.getResult());
         }
-        throw new RuntimeException(result.getResult());
+        throw new CustomException(ErrorStatus.SERVER_ERROR, result.getResult());
     }
 
 }

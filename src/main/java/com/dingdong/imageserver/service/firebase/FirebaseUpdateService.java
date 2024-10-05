@@ -3,12 +3,16 @@ package com.dingdong.imageserver.service.firebase;
 import com.dingdong.imageserver.constant.FirebaseFieldConstants;
 import com.dingdong.imageserver.dto.request.ReImagineRequestDTO;
 import com.dingdong.imageserver.dto.service.CommonImageGenerationDTO;
+import com.dingdong.imageserver.enums.TaskAction;
+import com.dingdong.imageserver.model.task.Task;
+import com.dingdong.imageserver.service.imagine.ThirdPartyIApiService;
 import com.google.firebase.database.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -20,9 +24,12 @@ import java.util.function.Consumer;
 public class FirebaseUpdateService extends FirebaseBaseService {
 
 
-    public FirebaseUpdateService(FirebaseDatabase firebaseDatabase) {
+    public FirebaseUpdateService(FirebaseDatabase firebaseDatabase, ThirdPartyIApiService thirdPartyIApiService) {
         super(firebaseDatabase);
+        this.thirdPartyIApiService = thirdPartyIApiService;
     }
+
+    private final ThirdPartyIApiService thirdPartyIApiService;
 
     /**
      * 이미지 생성 전 studentTaskId로 해당 작업 초기화
@@ -114,6 +121,27 @@ public class FirebaseUpdateService extends FirebaseBaseService {
         });
     }
 
+    // Task 진행 상태 업데이트
+    public void updateTaskProgress(DatabaseReference characterRef, Task task) {
+        characterRef.child(FirebaseFieldConstants.PROGRESS_FIELD).setValueAsync(task.getProgress());
+    }
+
+    // Task 성공 처리
+    public void handleTaskSuccess(DatabaseReference characterRef, Task task, CommonImageGenerationDTO promptDTO, String studentTaskId) {
+        if (task.getAction() == TaskAction.UPSCALE) {
+            List<String> backgroundRemovedImageUrls = thirdPartyIApiService.getPostProcessingImageUrl(task.getImageUrl(), studentTaskId, promptDTO);
+            characterRef.child(FirebaseFieldConstants.IMAGE_URL_FIELD).setValueAsync(backgroundRemovedImageUrls);
+            characterRef.child(FirebaseFieldConstants.PROGRESS_FIELD).setValueAsync("100%");
+            characterRef.child(FirebaseFieldConstants.STATUS_FIELD).setValueAsync("complete");
+            characterRef.child(FirebaseFieldConstants.END_TIME_FIELD).setValueAsync(LocalDateTime.now().toString());
+        }
+    }
+
+    // Task 실패 처리
+    public void handleTaskFailure(TaskAction taskAction, String studentTaskId, CommonImageGenerationDTO character, String imageId, String errorMessage) {
+        log.error(studentTaskId + imageId + errorMessage);
+        updateErrorStatusById(studentTaskId, imageId, character, "failed", taskAction.name() + " " + errorMessage);
+    }
 
     // 프롬프트 상태 업데이트 메소드 (IMAGINE 시)
     public String updatePromptStatus(String studentTaskId, CommonImageGenerationDTO promptDTO, String prompt, String status) {
